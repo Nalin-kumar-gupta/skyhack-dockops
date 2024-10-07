@@ -37,14 +37,23 @@ def extract_first_city_pair(transcript):
         # Extract words after "to"
         words_after_to = lower_transcript[to_index + 4:].strip().split()
         
-        # Remove unwanted words after the "to" keyword
+        # Remove unwanted words after the "to" keyword and limit words
         unwanted_words = ['next', 'for', 'was', 'is', 'will']
         to_city_words = []
         for word in words_after_to:
             if word in unwanted_words:
                 break
+            # If the word ends with '.', remove '.' and stop adding further words
+            if word.endswith('.'):
+                to_city_words.append(word.rstrip('.'))
+                break
             to_city_words.append(word)
+            
+            # Stop if we already have 2 words
+            if len(to_city_words) >= 2:
+                break
         
+        # Join and clean the "to" city
         to_city = ' '.join(to_city_words).strip()
 
         return from_city, to_city
