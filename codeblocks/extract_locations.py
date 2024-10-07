@@ -1,4 +1,5 @@
 import pandas as pd
+import re
 
 # Read the merged dataset
 df = pd.read_csv('corrected_dataset.csv')
@@ -32,29 +33,50 @@ def extract_first_city_pair(transcript):
             continue  # Skip to the next "from"
         
         # Extract "from" city
-        from_city = ' '.join(words_between)
+        from_city = ' '.join(words_between).title()  # Capitalize first letter of each word
         
         # Extract words after "to"
         words_after_to = lower_transcript[to_index + 4:].strip().split()
         
         # Remove unwanted words after the "to" keyword and limit words
-        unwanted_words = ['next', 'for', 'was', 'is', 'will']
+        unwanted_words = [
+            'next', 'for', 'was', 'is', 'will', 'tomorrow', 'and', 'scheduled', 
+            'last', 'week', 'month', 'year', 'yesterday', 'today', 'day', 'then', 
+            'later', 'around', 'via', 'towards', 'approximately', 'arriving', 'departing', 
+            'going', 'leaving', 'back', 'trip', 'meeting', 'visit', 'returning', 'morning', 
+            'evening', 'afternoon', 'night', 'am', 'pm', 'that', 'agent', 'Agent', 'on', 'On'
+        ]
         to_city_words = []
         for word in words_after_to:
-            if word in unwanted_words:
+            # Stop processing if the word or its variation with period or comma is in unwanted words
+            if word.rstrip('.,') in unwanted_words:
                 break
-            # If the word ends with '.', remove '.' and stop adding further words
-            if word.endswith('.'):
-                to_city_words.append(word.rstrip('.'))
-                break
-            to_city_words.append(word)
             
+            # Clean special characters (e.g., '.', ',', etc.) within or at the end of the word
+            # Match any character that is not a letter or space and remove everything after it
+            cleaned_word = re.sub(r'[^a-zA-Z\s].*', '', word)
+            
+            # If the cleaned word is valid (not empty), append it to to_city_words
+            if cleaned_word:
+                to_city_words.append(cleaned_word)
+
             # Stop if we already have 2 words
             if len(to_city_words) >= 2:
                 break
         
         # Join and clean the "to" city
-        to_city = ' '.join(to_city_words).strip()
+        to_city = ' '.join(to_city_words).strip().title()  # Capitalize first letter of each word
+
+        # Special case for "la"
+        if to_city.lower() == 'la':
+            to_city = 'Los Angeles'
+        if from_city.lower() == 'la':
+            from_city = 'Los Angeles'
+        if to_city.lower() == 'Nyc':
+            to_city = 'New York'
+        if from_city.lower() == 'Nyc':
+            from_city = 'New York'
+            
 
         return from_city, to_city
 
