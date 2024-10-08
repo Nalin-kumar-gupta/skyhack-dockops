@@ -147,28 +147,55 @@ def extract_info(transcript):
     lines = transcript.split('\n')
     capturing_reason = False
     capturing_solutions = False
+    capture_more_customer_lines = False  # Flag to capture extra customer lines
+    
+    customer_line_count = 0  # Counter for capturing the first three customer lines
     
     for line in lines:
+        # Extracting call reason when customer says "I'm calling"
         if "Customer" in line and "I'm calling" in line:
             capturing_reason = True
             reason_part = line.split("I'm calling")[-1].strip()
-            call_reason.append(reason_part)
+            call_reason.append(reason_part)  # append to the list
+            
+            # Check if "about" or "regarding" is mentioned in the reason
+            if "about" in reason_part or "regarding" in reason_part:
+                capture_more_customer_lines = True  # Trigger capturing more customer lines
         
+        # Capture first three customer lines after "about" or "regarding"
+        if capture_more_customer_lines and "Customer" in line:
+            if customer_line_count < 3:  # Capture the first three customer lines
+                call_reason.append(line.strip())
+                customer_line_count += 1
+            else:
+                capture_more_customer_lines = False  # Stop after capturing 3 lines
+        
+        # Stopping the capture of the call reason when agent speaks
         if "Agent" in line and capturing_reason:
             capturing_reason = False
         
+        # If still capturing the reason, append the lines
         if capturing_reason:
-            call_reason.append(line.strip())
+            call_reason.append(line.strip())  # appending to the list
         
+        # Capturing solutions provided by agent
         if "Agent" in line and "Let me" in line:
             capturing_solutions = True
             solution_part = line.split("Let me")[-1].strip()
             agent_solutions.append("Let me " + solution_part)
         
+        # Stop capturing solutions when the customer responds
         if "Customer" in line:
             capturing_solutions = False
             customer_responses.append(line.strip())
 
+    # If "about" or "regarding" was mentioned, add "about" to the start of the call reason
+    if "about" in " ".join(call_reason).lower() or "regarding" in " ".join(call_reason).lower():
+        call_reason = "about " + " | ".join(call_reason)
+    else:
+        call_reason = " | ".join(call_reason) if call_reason else "No specific call reason"
+    
+    # Handling customer accepted solution based on responses
     if len(customer_responses) >= 2:
         customer_accepted = customer_responses[-2]
     elif len(customer_responses) == 1:
@@ -176,11 +203,12 @@ def extract_info(transcript):
     else:
         customer_accepted = "No customer response found"
 
+    # Formatting the solutions provided by agent
     formatted_solutions = [f"Solution {i+1}: {sol}" for i, sol in enumerate(agent_solutions)]
     
     return {
-        "actual_call_reason": " | ".join(call_reason),
-        "agent_solutions": " | ".join(formatted_solutions),
+        "actual_call_reason": call_reason,
+        "agent_solutions": " | ".join(formatted_solutions),  # convert the list to a string
         "customer_accepted": customer_accepted
     }
 
@@ -189,7 +217,6 @@ df_extracted = ccasr['call_transcript'].apply(extract_info)
 extracted_df = pd.DataFrame(list(df_extracted))
 ccasr = pd.concat([ccasr, extracted_df], axis=1)
 
-# Step 8: Categorize based on 'actual_call_reason'
 def categorize_reason(call_reason):
     if pd.isna(call_reason) or call_reason.strip() == "":
         return 'Miscellaneous Issue'
@@ -201,21 +228,41 @@ def categorize_reason(call_reason):
     elif call_reason.startswith("to inquire"):
         return 'Get Details'
     elif call_reason.startswith("about") or call_reason.startswith("regarding"):
-        return 'Get Details'
+        if 'wanted to' in call_reason and 'check' in call_reason:
+            return 'Get Details'
+        elif 'change' in call_reason:
+            return 'Change Flight'
+        elif 'complain' in call_reason or 'not happy' in call_reason or 'complaint' in call_reason:
+            return 'Complaint'
+        else:
+            return 'Get Details'
     elif call_reason.startswith("because") or call_reason.startswith("cause"):
         if 'change' in call_reason:
             return 'Change Flight'
         elif 'delay' in call_reason or 'delayed' in call_reason:
-            if 'connecting' and 'missed' in call_reason:
-                return 'Miss Connecting Flight'
+            if 'connecting' in call_reason and 'missed' in call_reason:
+                return 'Missed Connecting Flight'
             else:
                 return 'Delayed Flight'
         else:
-            if 'complain' or 'complaint' in call_reason:
+            if 'complain' in call_reason or 'complaint' in call_reason:
                 return 'Complaint'
-            return 'Miscellaneous Issue'
+            else:
+                return 'Miscellaneous Issue'
     
-    return 'Miscellaneous Issue'
+    else:
+        if 'change' in call_reason:
+            return 'Change Flight'
+        elif 'delay' in call_reason or 'delayed' in call_reason:
+            if 'connecting' in call_reason and 'missed' in call_reason:
+                return 'Missed Connecting Flight'
+            else:
+                return 'Delayed Flight'
+        else:
+            if 'complain' in call_reason or 'complaint' in call_reason:
+                return 'Complaint'
+            else:
+                return 'Miscellaneous Issue'
 
 logging.info("Categorizing based on 'actual_call_reason'...")
 ccasr['reason_label'] = ccasr['actual_call_reason'].apply(categorize_reason)
@@ -234,6 +281,97 @@ def calculate_aht_ast(df):
     return df
 
 ccasr = calculate_aht_ast(ccasr)
+
+import re
+
+# Step 8: Function to extract offers based on agent solutions for 'Delayed Flights' and other categories
+def extract_offers(agent_solution, reason_label):
+    agent_solution = agent_solution.lower()
+
+    refund_offer = ""
+    voucher_offer = ""
+    sky_miles_bonus = ""
+
+    # Check if the reason label is 'Delayed Flights' or another category
+    if reason_label in ['Delayed Flight', 'Missed Connecting Flight', 'Complaint', 'Miscellaneous Issue']:
+        # Define regex patterns for full refund and no refund
+        full_refund_patterns = [
+            r"happy to provide you with a full refund",
+            r"happy to process that full refund",
+            r"go ahead and process that full refund",
+            r"happy to process a full refund",
+            r"let me offer you a full refund",
+            r"can offer you a full refund",
+            r"processed a full refund",
+            r"full refund is certainly justified",
+            r"go ahead and refund",
+            r"I can offer in compensation is a full refund"
+        ]
+
+        no_refund_patterns = [
+            r"unfortunately",
+            r"non-refundable",
+            r"unable to provide a full refund",
+            r"not able to offer a refund",
+            r"can't offer"
+        ]
+
+        # Check if any of the full refund patterns match
+        for pattern in full_refund_patterns:
+            if re.search(pattern, agent_solution):
+                refund_offer = "Full refund offered"
+                break  # No need to check further if already refunded
+
+        # Check if no refund was given
+        if not refund_offer:
+            for pattern in no_refund_patterns:
+                if re.search(pattern, agent_solution):
+                    refund_offer = "No refund offered"
+                    break
+
+        # Check for travel voucher or credit and extract the value if present
+        if 'voucher' in agent_solution or 'credit' in agent_solution:
+            # Look for multiple values with a $ sign before "voucher" or "credit"
+            voucher_matches = re.findall(r'\$(\d+)', agent_solution)
+            if voucher_matches:
+                # Use the value found later in the text
+                voucher_value = voucher_matches[-1]  # Take the last found value
+                voucher_offer = f"Travel voucher {voucher_value}$ offered"
+            else:
+                voucher_offer = "Travel credit offered"
+
+        # Check for SkyMiles bonus by finding a number preceding "bonus" or "sky miles"
+        bonus_match = re.search(r'(\d+)\s*(bonus|sky miles)', agent_solution)
+        if bonus_match:
+            sky_miles_value = bonus_match.group(1)
+            sky_miles_bonus = f"{sky_miles_value} SkyMiles bonus offered"
+    
+    else:
+        # Other categories can have different logic if needed
+        refund_offer = "Refund/extraction logic for other categories"
+    
+    # Combine refund, voucher, and SkyMiles bonus offers if present
+    offers = []
+    if refund_offer:
+        offers.append(refund_offer)
+    if voucher_offer:
+        offers.append(voucher_offer)
+    if sky_miles_bonus:
+        offers.append(sky_miles_bonus)
+
+    if offers:
+        return "; ".join(offers)
+
+    # Default case if no offers found
+    return "No specific offer found"
+
+# Apply the extraction logic to the 'agent_solutions' column with the reason_label passed into the function
+logging.info("Extracting offers from 'agent_solutions' for 'Delayed Flights'...")
+ccasr['extracted_offers'] = ccasr.apply(
+    lambda row: extract_offers(row['agent_solutions'], row['reason_label']),
+    axis=1
+)
+
 
 # Step 10: Save Final Dataset
 output_file = 'data/final_corrected_dataset_with_aht_ast.csv'

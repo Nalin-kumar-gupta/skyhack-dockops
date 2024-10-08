@@ -30,12 +30,12 @@ def validate_location(row, column_name, valid_list):
         return ''  # Empty the cell if not valid
 
 # Read the transcript data from CSV file
-input_file_path = 'corrected_dataset_with_info.csv'  # Replace with your actual file path
+input_file_path = 'corrected_dataset_w.csv'  # Replace with your actual file path
 df = pd.read_csv(input_file_path)
 
-# Validate 'from' and 'to' locations
-df['from_city'] = df.apply(lambda row: validate_location(row, 'from_city', from_city_common_names), axis=1)
-df['to_city'] = df.apply(lambda row: validate_location(row, 'to_city', to_city_common_names), axis=1)
+# Validate 'travelling_from' and 'travelling_to' locations
+df['travelling_from'] = df.apply(lambda row: validate_location(row, 'travelling_from', from_city_common_names), axis=1)
+df['travelling_to'] = df.apply(lambda row: validate_location(row, 'travelling_to', to_city_common_names), axis=1)
 
 # Write the updated DataFrame to a new CSV file
 output_file_path = 'corrected_dataset_with_valid_locations.csv'  # Replace with your desired output file path
