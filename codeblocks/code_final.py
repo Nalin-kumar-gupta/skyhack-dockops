@@ -232,6 +232,10 @@ def categorize_reason(call_reason):
             return 'Get Details'
         elif 'change' in call_reason:
             return 'Change Flight'
+        elif 'cancelled' in call_reason:
+            return 'Cancelled Flight'
+        elif 'bag' in call_reason or 'baggage' in call_reason:
+            return 'Baggage Mishandling'
         elif 'complain' in call_reason or 'not happy' in call_reason or 'complaint' in call_reason:
             return 'Complaint'
         else:
@@ -240,10 +244,14 @@ def categorize_reason(call_reason):
         if 'change' in call_reason:
             return 'Change Flight'
         elif 'delay' in call_reason or 'delayed' in call_reason:
-            if 'connecting' in call_reason and 'missed' in call_reason:
+            if 'connecting' in call_reason and ('missed' in call_reason or 'miss' in call_reason):
                 return 'Missed Connecting Flight'
             else:
                 return 'Delayed Flight'
+        elif 'cancelled' in call_reason:
+            return 'Cancelled Flight'
+        elif 'bag' in call_reason or 'baggage' in call_reason:
+            return 'Baggage Mishandling'
         else:
             if 'complain' in call_reason or 'complaint' in call_reason:
                 return 'Complaint'
@@ -254,10 +262,12 @@ def categorize_reason(call_reason):
         if 'change' in call_reason:
             return 'Change Flight'
         elif 'delay' in call_reason or 'delayed' in call_reason:
-            if 'connecting' in call_reason and 'missed' in call_reason:
+            if 'connecting' in call_reason and ('missed' in call_reason or 'miss' in call_reason):
                 return 'Missed Connecting Flight'
             else:
                 return 'Delayed Flight'
+        elif 'cancelled' in call_reason:
+            return 'Cancelled Flight'
         else:
             if 'complain' in call_reason or 'complaint' in call_reason:
                 return 'Complaint'
@@ -282,17 +292,20 @@ def calculate_aht_ast(df):
 
 ccasr = calculate_aht_ast(ccasr)
 
-import re
 
-# Step 8: Function to extract offers based on agent solutions for 'Delayed Flights' and other categories
+
+# Step 8: Function to extract structured offers based on agent solutions for 'Delayed Flights' and other categories
 def extract_offers(agent_solution, reason_label):
     agent_solution = agent_solution.lower()
 
-    refund_offer = ""
-    voucher_offer = ""
-    sky_miles_bonus = ""
+    # Default values for each column
+    refund_offer = "Refund not offered"
+    voucher_offer = "Voucher not offered"
+    voucher_value = "N/A"
+    sky_miles_offer = "SkyMiles not offered"
+    sky_miles_value = "N/A"
 
-    # Check if the reason label is 'Delayed Flights' or another category
+    # Check if the reason label is one of the valid categories
     if reason_label in ['Delayed Flight', 'Missed Connecting Flight', 'Complaint', 'Miscellaneous Issue']:
         # Define regex patterns for full refund and no refund
         full_refund_patterns = [
@@ -319,58 +332,60 @@ def extract_offers(agent_solution, reason_label):
         # Check if any of the full refund patterns match
         for pattern in full_refund_patterns:
             if re.search(pattern, agent_solution):
-                refund_offer = "Full refund offered"
-                break  # No need to check further if already refunded
+                refund_offer = "Refund offered"
+                break
 
         # Check if no refund was given
-        if not refund_offer:
+        if refund_offer == "Refund not offered":
             for pattern in no_refund_patterns:
                 if re.search(pattern, agent_solution):
-                    refund_offer = "No refund offered"
+                    refund_offer = "Refund not offered"
                     break
 
         # Check for travel voucher or credit and extract the value if present
         if 'voucher' in agent_solution or 'credit' in agent_solution or 'offer' in agent_solution:
-            # Look for multiple values with a $ sign before "voucher" or "credit"
-            voucher_matches = re.findall(r'\$(\d+)', agent_solution)
+            voucher_offer = "Voucher offered"
+            # Look for multiple values with a $ sign before "voucher" or "credit", allowing for commas in the number
+            voucher_matches = re.findall(r'\$(\d{1,3}(?:,\d{3})*)', agent_solution)
             if voucher_matches:
-                # Use the value found later in the text
-                voucher_value = voucher_matches[-1]  # Take the last found value
-                voucher_offer = f"Travel voucher {voucher_value}$ offered"
+                # Use the value found later in the text and remove commas
+                voucher_value = f"{voucher_matches[-1].replace(',', '')}$"
             else:
-                voucher_offer = "Travel credit offered"
+                voucher_value = "N/A"
 
-        # Check for SkyMiles bonus by finding a number preceding "bonus" or "sky miles"
-        bonus_match = re.search(r'(\d+)\s*(bonus|sky miles)', agent_solution)
+        # Check for SkyMiles bonus by finding a number (with or without commas) preceding "bonus" or "sky miles"
+        bonus_match = re.search(r'(\d{1,3}(?:,\d{3})*)\s*(bonus|sky miles)', agent_solution)
         if bonus_match:
-            sky_miles_value = bonus_match.group(1)
-            sky_miles_bonus = f"{sky_miles_value} SkyMiles bonus offered"
+            sky_miles_value = bonus_match.group(1).replace(',', '')  # Clean up any commas in the SkyMiles value
+            if sky_miles_value == "000":
+                sky_miles_value = "N/A"  # Handle cases where invalid SkyMiles values are found
+            else:
+                sky_miles_offer = "SkyMiles offered"
+                sky_miles_value = f"{sky_miles_value} SkyMiles"
     
-    else:
-        # Other categories can have different logic if needed
-        refund_offer = "N/A"
-    
-    # Combine refund, voucher, and SkyMiles bonus offers if present
-    offers = []
-    if refund_offer:
-        offers.append(refund_offer)
-    if voucher_offer:
-        offers.append(voucher_offer)
-    if sky_miles_bonus:
-        offers.append(sky_miles_bonus)
-
-    if offers:
-        return "; ".join(offers)
-
-    # Default case if no offers found
-    return "No specific offer found"
+    # Return structured information as a dictionary
+    return {
+        'refund_offer': refund_offer,
+        'voucher_offer': voucher_offer,
+        'voucher_value': voucher_value,
+        'sky_miles_offer': sky_miles_offer,
+        'sky_miles_value': sky_miles_value
+    }
 
 # Apply the extraction logic to the 'agent_solutions' column with the reason_label passed into the function
-logging.info("Extracting offers from 'agent_solutions' for 'Delayed Flights'...")
-ccasr['extracted_offers'] = ccasr.apply(
-    lambda row: extract_offers(row['agent_solutions'], row['reason_label']),
+logging.info("Extracting structured offers from 'agent_solutions' for 'Delayed Flights'...")
+
+# Apply the extract_offers function and expand the resulting dictionary into separate columns
+offer_columns = ccasr.apply(
+    lambda row: pd.Series(extract_offers(row['agent_solutions'], row['reason_label'])),
     axis=1
 )
+
+# Merge the new columns back into the main DataFrame
+ccasr = pd.concat([ccasr, offer_columns], axis=1)
+
+# Display the updated DataFrame
+print(ccasr[['refund_offer', 'voucher_offer', 'voucher_value', 'sky_miles_offer', 'sky_miles_value']].head())
 
 
 # Step 10: Save Final Dataset
