@@ -72,10 +72,14 @@ def extract_first_city_pair(transcript):
             to_city = 'Los Angeles'
         if from_city.lower() == 'la':
             from_city = 'Los Angeles'
-        if to_city.lower() == 'Nyc':
+        if to_city.lower() == 'nyc':
             to_city = 'New York'
-        if from_city.lower() == 'Nyc':
+        if from_city.lower() == 'nyc':
             from_city = 'New York'
+        if to_city.lower() == 'lax':
+            to_city = 'Los Angeles'
+        if from_city.lower() == 'lax':
+            from_city = 'Los Angeles'
             
 
         return from_city, to_city
