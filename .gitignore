@@ -1,3 +1,27 @@
-venv
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+
+# Data and Output directories
 data/*
 output/*
+
+# Mac system files
+.DS_Store
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.bak
+
+# VSCode specific files
+.vscode/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/

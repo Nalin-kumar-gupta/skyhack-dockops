@@ -217,10 +217,10 @@ def extract_info(transcript):
             call_reason.append(line.strip())  # appending to the list
         
         # Capturing solutions provided by agent
-        if "Agent" in line and "Let me" in line:
+        if "Agent" in line:
             capturing_solutions = True
-            solution_part = line.split("Let me")[-1].strip()
-            agent_solutions.append("Let me " + solution_part)
+           
+            agent_solutions.append("Let me " + line)
         
         # Stop capturing solutions when the customer responds
         if "Customer" in line:
@@ -352,9 +352,11 @@ def extract_offers(agent_solution, reason_label):
     voucher_value = "N/A"
     sky_miles_offer = "SkyMiles not offered"
     sky_miles_value = "N/A"
+    change_fee_offer = "Change fee not charged"
+    change_fee_value = "N/A"
 
     # Check if the reason label is one of the valid categories
-    if reason_label in ['Delayed Flight', 'Missed Connecting Flight', 'Complaint', 'Miscellaneous Issue', 'Cancelled', 'Baggage Mishandling']:
+    if reason_label in ['Delayed Flight', 'Missed Connecting Flight', 'Complaint', 'Miscellaneous Issue', 'Cancelled', 'Baggage Mishandling', 'Change Flight', 'Get Details', 'Cancelled Flight']:
         # Define regex patterns for full refund and no refund
         full_refund_patterns = [
             r"happy to provide you with a full refund",
@@ -411,14 +413,61 @@ def extract_offers(agent_solution, reason_label):
                 sky_miles_offer = "SkyMiles offered"
                 sky_miles_value = f"{sky_miles_value} SkyMiles"
     
+    # Check for change fee information if the reason label is 'Change Flight'
+    # Check for change fee information if the reason label is 'Change Flight'
+    if reason_label == 'Change Flight':
+        # List of regex patterns indicating a waived change fee
+        waived_change_fee_patterns = [
+            r'waive(d)? the change fee',
+            r'remove(d)? the extra fee',
+            r'cancel(l)? the change fee',
+            r'no change fee will apply',
+            r'we will cover the change fee',
+            r'can waive'
+        ]
+
+        # Check if any of the waived change fee patterns match
+        for pattern in waived_change_fee_patterns:
+            if re.search(pattern, agent_solution):
+                change_fee_offer = "Change fee waived"
+                break
+
+        if change_fee_offer == "Change fee not charged":
+            # List of regex patterns indicating a change fee charge
+            charged_change_fee_patterns = [
+                r'additional (\d{1,3}(?:,\d{3})*)\$',  # Match "$ amount additional fee"
+                r'\$(\d{1,3}(?:,\d{3})*) change fee',   # Match "$ amount change fee"
+                r'change fee of \$(\d{1,3}(?:,\d{3})*)',  # Match "change fee of $xx"
+                r'\$(\d{1,3}(?:,\d{3})*) fee',  # Match "$xx fee"
+                r'\$(\d{1,3}(?:,\d{3})*) is pretty steep',  # Match "$xx is pretty steep"
+                r'\$(\d{1,3}(?:,\d{3})*) more',  # Match "$xx more"
+                r'\$(\d{1,3}(?:,\d{3})*) difference',  # Match "$xx difference"
+                r'\$(\d{1,3}(?:,\d{3})*) higher'  # Match "$xx higher"
+            ]
+
+            # Check for charged change fee and capture value
+            for pattern in charged_change_fee_patterns:
+                change_fee_match = re.search(pattern, agent_solution)
+                if change_fee_match:
+                    change_fee_offer = "Change fee charged"
+                    change_fee_value = f"{change_fee_match.group(1).replace(',', '')}$"
+                    break
+
     # Return structured information as a dictionary
     return {
         'refund_offer': refund_offer,
         'voucher_offer': voucher_offer,
         'voucher_value': voucher_value,
         'sky_miles_offer': sky_miles_offer,
-        'sky_miles_value': sky_miles_value
+        'sky_miles_value': sky_miles_value,
+        'change_fee_offer': change_fee_offer,
+        'change_fee_value': change_fee_value
     }
+
+# Example usage:
+agent_solution = "We can offer you a full refund, a $100 travel voucher, and the $15,020 change fee."
+reason_label = "Change Flight"
+print(extract_offers(agent_solution, reason_label))
 
 # Apply the extraction logic to the 'agent_solutions' column with the reason_label passed into the function
 logging.info("Extracting structured offers from 'agent_solutions' for Irregular Operations")
