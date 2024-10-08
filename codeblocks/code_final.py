@@ -330,7 +330,7 @@ def extract_offers(agent_solution, reason_label):
                     break
 
         # Check for travel voucher or credit and extract the value if present
-        if 'voucher' in agent_solution or 'credit' in agent_solution:
+        if 'voucher' in agent_solution or 'credit' in agent_solution or 'offer' in agent_solution:
             # Look for multiple values with a $ sign before "voucher" or "credit"
             voucher_matches = re.findall(r'\$(\d+)', agent_solution)
             if voucher_matches:
@@ -348,7 +348,7 @@ def extract_offers(agent_solution, reason_label):
     
     else:
         # Other categories can have different logic if needed
-        refund_offer = "Refund/extraction logic for other categories"
+        refund_offer = "N/A"
     
     # Combine refund, voucher, and SkyMiles bonus offers if present
     offers = []
