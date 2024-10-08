@@ -6,11 +6,15 @@ import os
 import re
 
 # Setting up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Start the process and log the initialization
+logging.info("Process started, initializing the spaCy model and reading files.")
 
 # Load spaCy's English model
 logging.info("Loading spaCy model...")
 nlp = spacy.load("en_core_web_sm")
+logging.info("SpaCy model loaded successfully.")
 
 # Step 1: Read CSV Files
 logging.info("Reading CSV files...")
@@ -19,22 +23,52 @@ customers = pd.read_csv('data/customers.csv')
 reasons = pd.read_csv('data/reason.csv')
 sentiments = pd.read_csv('data/sentiment.csv')
 
+logging.debug(f"Calls data shape: {calls.shape}, Sample:\n{calls.head()}")
+logging.debug(f"Customers data shape: {customers.shape}, Sample:\n{customers.head()}")
+logging.debug(f"Reasons data shape: {reasons.shape}, Sample:\n{reasons.head()}")
+logging.debug(f"Sentiments data shape: {sentiments.shape}, Sample:\n{sentiments.head()}")
+
 # Step 2: Merge Calls and Sentiments
 logging.info("Merging 'calls' with 'sentiments' on 'call_id'...")
 cas = pd.merge(calls, sentiments, on='call_id', how='left')
-logging.info(f"Null values after merging 'calls' and 'sentiments':\n{cas.isnull().sum()}")
+logging.debug(f"After merging 'calls' and 'sentiments', shape: {cas.shape}, Null counts:\n{cas.isnull().sum()}")
 
 # Step 3: Merge with Reasons
 logging.info("Merging 'cas' with 'reasons' on 'call_id'...")
 casr = pd.merge(cas, reasons, on='call_id', how='left')
-logging.info(f"Null values after merging 'cas' and 'reasons':\n{casr.isnull().sum()}")
+logging.debug(f"After merging 'cas' with 'reasons', shape: {casr.shape}, Null counts:\n{casr.isnull().sum()}")
 
 # Step 4: Merge with Customers
 logging.info("Merging 'casr' with 'customers' on 'customer_id'...")
 ccasr = pd.merge(casr, customers, on='customer_id', how='left')
-logging.info(f"Null values after merging 'casr' and 'customers':\n{ccasr.isnull().sum()}")
+logging.debug(f"After merging 'casr' with 'customers', shape: {ccasr.shape}, Null counts:\n{ccasr.isnull().sum()}")
 
-# Step 5: Extract 'travelling_from' and 'travelling_to' from 'call_transcript'
+# Step 5: Data Cleaning on 'primary_call_reason'
+logging.info("Cleaning 'primary_call_reason' column in the dataset...")
+
+# Replace NaNs with empty strings and convert to lowercase
+ccasr['primary_call_reason'] = ccasr['primary_call_reason'].fillna('').astype(str).str.lower()
+
+# Remove special characters
+logging.info("Removing special characters from 'primary_call_reason'...")
+ccasr['primary_call_reason'] = ccasr['primary_call_reason'].str.replace(r'[^\w\s]', '', regex=True)
+
+# Remove stopwords
+stop_words = ['and']
+logging.info("Removing stopwords from 'primary_call_reason'...")
+ccasr['primary_call_reason'] = ccasr['primary_call_reason'].apply(
+    lambda x: ' '.join(word for word in x.split() if word not in stop_words)
+)
+
+# Remove extra spaces
+logging.info("Removing extra spaces from 'primary_call_reason'...")
+ccasr['primary_call_reason'] = ccasr['primary_call_reason'].str.replace(r'\s+', '', regex=True)
+
+# Replace empty values with 'othertopics'
+logging.info("Replacing empty values in 'primary_call_reason' with 'othertopics'...")
+ccasr['primary_call_reason'] = ccasr['primary_call_reason'].replace('', 'othertopics')
+
+# Step 6: Extract 'travelling_from' and 'travelling_to' from 'call_transcript'
 # Function to extract the first city pair
 def extract_first_city_pair(transcript):
     # Convert transcript to lowercase for case-insensitive search
@@ -59,6 +93,7 @@ def extract_first_city_pair(transcript):
         
         # Check if the words in between are more than 4
         if len(words_between) > 4:
+            # logging.debug(f"Too many words between 'from' and 'to': {words_between}. Searching next...")
             # Move search index to the next occurrence of "from"
             search_index = to_index + 4
             continue  # Skip to the next "from"
@@ -112,34 +147,37 @@ def extract_first_city_pair(transcript):
         if from_city.lower() == 'lax':
             from_city = 'Los Angeles'
             
-
+        
         return from_city, to_city
 
 logging.info("Extracting 'travelling_from' and 'travelling_to' locations from 'call_transcript'...")
 ccasr[['travelling_from', 'travelling_to']] = ccasr['call_transcript'].apply(
     lambda x: pd.Series(extract_first_city_pair(x))
 )
+logging.debug(f"Sample of extracted locations: \n{ccasr[['travelling_from', 'travelling_to']].head()}")
 
-# # Step 6: Correct 'travelling_from' and 'travelling_to' using spaCy for validation
-# def extract_location(text):
-#     if pd.isna(text):  # Handle NaN cases
-#         return ""
+# Step 7: Correct 'travelling_from' and 'travelling_to' using spaCy for validation
+def extract_location(text):
+    if pd.isna(text):  # Handle NaN cases
+        return ""
     
-#     doc = nlp(text)
+    doc = nlp(text)
     
-#     # Extract GPE (Geopolitical Entity) from the text
-#     for ent in doc.ents:
-#         if ent.label_ == "GPE":
-#             return ent.text
+    # Extract GPE (Geopolitical Entity) from the text
+    for ent in doc.ents:
+        if ent.label_ == "GPE":
+            return ent.text
     
-#     return ""
+    return ""
 
-# logging.info("Correcting 'travelling_from' and 'travelling_to' locations using spaCy...")
-# ccasr['travelling_from'] = ccasr['travelling_from'].apply(lambda x: extract_location(x))
-# ccasr['travelling_to'] = ccasr['travelling_to'].apply(lambda x: extract_location(x))
+logging.info("Correcting 'travelling_from' and 'travelling_to' locations using spaCy...")
+ccasr['travelling_from'] = ccasr['travelling_from'].apply(lambda x: extract_location(x))
+ccasr['travelling_to'] = ccasr['travelling_to'].apply(lambda x: extract_location(x))
+logging.debug(f"Corrected locations: \n{ccasr[['travelling_from', 'travelling_to']].head()}")
 
-# Step 7: Extract call reason, agent solutions, and customer response from transcripts
+# Step 8: Extract call reason, agent solutions, and customer response from transcripts
 def extract_info(transcript):
+    logging.debug(f"Extracting call reason and solutions from transcript: {transcript[:50]}")
     call_reason = []
     agent_solutions = []
     customer_responses = []
@@ -149,7 +187,7 @@ def extract_info(transcript):
     capturing_solutions = False
     capture_more_customer_lines = False  # Flag to capture extra customer lines
     
-    customer_line_count = 0  # Counter for capturing the first three customer lines
+    customer_line_count = 0  # Counter for capturing the first two customer lines
     
     for line in lines:
         # Extracting call reason when customer says "I'm calling"
@@ -162,13 +200,13 @@ def extract_info(transcript):
             if "about" in reason_part or "regarding" in reason_part:
                 capture_more_customer_lines = True  # Trigger capturing more customer lines
         
-        # Capture first three customer lines after "about" or "regarding"
+        # Capture first two customer lines after "about" or "regarding"
         if capture_more_customer_lines and "Customer" in line:
-            if customer_line_count < 3:  # Capture the first three customer lines
+            if customer_line_count < 2:  # Capture the first two customer lines
                 call_reason.append(line.strip())
                 customer_line_count += 1
             else:
-                capture_more_customer_lines = False  # Stop after capturing 3 lines
+                capture_more_customer_lines = False  # Stop after capturing 2 lines
         
         # Stopping the capture of the call reason when agent speaks
         if "Agent" in line and capturing_reason:
@@ -193,7 +231,13 @@ def extract_info(transcript):
     if "about" in " ".join(call_reason).lower() or "regarding" in " ".join(call_reason).lower():
         call_reason = "about " + " | ".join(call_reason)
     else:
-        call_reason = " | ".join(call_reason) if call_reason else "No specific call reason"
+        # Only keep the first two customer lines if no special case was triggered
+        call_reason = " | ".join(call_reason[:2]) if call_reason else ""
+
+    # If the call_reason is still empty, capture the first two customer lines
+    if not call_reason:
+        customer_dialogue_lines = [line for line in lines if "Customer" in line][:2]  # Capture first two customer lines
+        call_reason = " | ".join(customer_dialogue_lines) if customer_dialogue_lines else "No specific call reason"
     
     # Handling customer accepted solution based on responses
     if len(customer_responses) >= 2:
@@ -215,8 +259,10 @@ def extract_info(transcript):
 logging.info("Extracting call reason, solutions, and customer responses from transcripts...")
 df_extracted = ccasr['call_transcript'].apply(extract_info)
 extracted_df = pd.DataFrame(list(df_extracted))
+logging.debug(f"Extracted call reasons and solutions: \n{extracted_df.head()}")
 ccasr = pd.concat([ccasr, extracted_df], axis=1)
 
+# Step 9: Categorize call reason
 def categorize_reason(call_reason):
     if pd.isna(call_reason) or call_reason.strip() == "":
         return 'Miscellaneous Issue'
@@ -268,6 +314,8 @@ def categorize_reason(call_reason):
                 return 'Delayed Flight'
         elif 'cancelled' in call_reason:
             return 'Cancelled Flight'
+        elif 'bag' in call_reason or 'baggage' in call_reason:
+            return 'Baggage Mishandling'
         else:
             if 'complain' in call_reason or 'complaint' in call_reason:
                 return 'Complaint'
@@ -277,7 +325,7 @@ def categorize_reason(call_reason):
 logging.info("Categorizing based on 'actual_call_reason'...")
 ccasr['reason_label'] = ccasr['actual_call_reason'].apply(categorize_reason)
 
-# Step 9: Calculate AHT, AST, and extract Call Date
+# Step 10: Calculate AHT, AST, and extract Call Date
 logging.info("Calculating AHT, AST, and extracting 'call_date'...")
 def calculate_aht_ast(df):
     df['call_start_datetime'] = pd.to_datetime(df['call_start_datetime'], format='%m/%d/%Y %H:%M')
@@ -294,7 +342,7 @@ ccasr = calculate_aht_ast(ccasr)
 
 
 
-# Step 8: Function to extract structured offers based on agent solutions for 'Delayed Flights' and other categories
+# Step 11: Function to extract structured offers based on agent solutions for 'Delayed Flights' and other categories
 def extract_offers(agent_solution, reason_label):
     agent_solution = agent_solution.lower()
 
@@ -306,7 +354,7 @@ def extract_offers(agent_solution, reason_label):
     sky_miles_value = "N/A"
 
     # Check if the reason label is one of the valid categories
-    if reason_label in ['Delayed Flight', 'Missed Connecting Flight', 'Complaint', 'Miscellaneous Issue']:
+    if reason_label in ['Delayed Flight', 'Missed Connecting Flight', 'Complaint', 'Miscellaneous Issue', 'Cancelled', 'Baggage Mishandling']:
         # Define regex patterns for full refund and no refund
         full_refund_patterns = [
             r"happy to provide you with a full refund",
@@ -373,7 +421,7 @@ def extract_offers(agent_solution, reason_label):
     }
 
 # Apply the extraction logic to the 'agent_solutions' column with the reason_label passed into the function
-logging.info("Extracting structured offers from 'agent_solutions' for 'Delayed Flights'...")
+logging.info("Extracting structured offers from 'agent_solutions' for Irregular Operations")
 
 # Apply the extract_offers function and expand the resulting dictionary into separate columns
 offer_columns = ccasr.apply(
@@ -388,8 +436,8 @@ ccasr = pd.concat([ccasr, offer_columns], axis=1)
 print(ccasr[['refund_offer', 'voucher_offer', 'voucher_value', 'sky_miles_offer', 'sky_miles_value']].head())
 
 
-# Step 10: Save Final Dataset
-output_file = 'data/final_corrected_dataset_with_aht_ast.csv'
+# Step 12: Save Final Dataset
+output_file = 'output/processed_dataset_with_ext.csv'
 logging.info(f"Saving the final dataset to {output_file}...")
 ccasr.to_csv(output_file, index=False)
 logging.info("Process completed successfully.")

@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Read the merged dataset (adjust the file path and format as needed)
-df = pd.read_csv('data/merged_data.csv')
+df = pd.read_csv('output/processed_dataset_with_ext1.csv')
 
 # Step 1: Replace NaNs with empty strings and convert to lowercase
 df['primary_call_reason'] = df['primary_call_reason'].fillna('').astype(str).str.lower()
@@ -25,4 +25,4 @@ df['primary_call_reason'] = df['primary_call_reason'].str.replace(r'\s+', '', re
 df['primary_call_reason'] = df['primary_call_reason'].replace('', 'othertopics')
 
 # Write the corrected dataframe to a new CSV file
-df.to_csv('corrected_dataset.csv', index=False)
+df.to_csv('output/processed_dataset_with_ext.csv', index=False)
