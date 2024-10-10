@@ -11,7 +11,7 @@ This project focuses on analyzing customer call data, extracting insights such a
 - **Data Processing**: Detailed explanation of how data is processed can be found in [docs/methodology.md](docs/methodology.md).
 
 ## Test.csv
-It is present in the root dir
+The required deliverable is present in the root dir.
 
 ## Extractions 
 All the key data that we have extracted from the raw data and transcripts is present in the Findings.csv in the root directory
