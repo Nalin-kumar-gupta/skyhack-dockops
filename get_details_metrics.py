@@ -18,6 +18,13 @@ metrics = {
     'Wants to Upgrade Seat': ['upgrade', 'seat change', 'first class', 'business class', 'premium', 'better seat']
 }
 
+# Configuration to specify filtering based on 'travelling_from' and 'travelling_to'
+config = {
+    'filter_by_travel': True,  # Set to True if you want to apply the travel filter
+    'travelling_from': 'Chicago',  # Specify the travelling_from value or leave empty for no filter
+    'travelling_to': 'Los Angeles'  # Specify the travelling_to value or leave empty for no filter
+}
+
 # Sample: Extract 'Get Details' customer dialogues
 def extract_get_details_concern(call_transcript):
     lines = call_transcript.split('\n')
@@ -48,23 +55,45 @@ def analyze_concerns(dialogue):
             analysis[metric] = False
     return analysis
 
-# Initialize a dictionary to count occurrences of each concern
-concern_counts = {metric: 0 for metric in metrics.keys()}
+# Initialize a dictionary to count occurrences and accumulate aht/ast for each concern
+concern_stats = {metric: {'count': 0, 'aht_sum': 0, 'ast_sum': 0} for metric in metrics.keys()}
 
 # Process each entry where the 'reason_label' is 'Get Details'
 for index, row in df[df['reason_label'] == 'Get Details'].iterrows():
+    
+    # Apply travel filter if configured
+    if config['filter_by_travel']:
+        if not (
+            (config['travelling_from'] == row['travelling_from'] if config['travelling_from'] else True) and
+            (config['travelling_to'] == row['travelling_to'] if config['travelling_to'] else True)
+        ):
+            continue  # Skip this row if it doesn't match the travelling_from/to filter
+    
     call_transcript = row['call_transcript']
     customer_dialogue = extract_get_details_concern(call_transcript)
     
-    # Analyze the extracted dialogue and update the concern counts
+    # Analyze the extracted dialogue and update the concern stats
     if customer_dialogue:
         concerns_analysis = analyze_concerns(customer_dialogue)
         for metric, result in concerns_analysis.items():
             if result:
-                concern_counts[metric] += 1
+                concern_stats[metric]['count'] += 1
+                concern_stats[metric]['aht_sum'] += row['aht']  # Sum up aht
+                concern_stats[metric]['ast_sum'] += row['ast']  # Sum up ast
 
-# Convert the concern counts to a DataFrame for better visualization
-concern_counts_df = pd.DataFrame(list(concern_counts.items()), columns=['Concern', 'Frequency'])
+# Prepare the data for tabulation (include average aht and ast calculations)
+concern_data = []
+for metric, stats in concern_stats.items():
+    if stats['count'] > 0:
+        avg_aht = stats['aht_sum'] / stats['count']
+        avg_ast = stats['ast_sum'] / stats['count']
+    else:
+        avg_aht = avg_ast = 0  # Avoid division by zero
+
+    concern_data.append([metric, stats['count'], round(avg_aht, 2), round(avg_ast, 2)])
+
+# Convert the concern data to a DataFrame for better visualization
+concern_data_df = pd.DataFrame(concern_data, columns=['Concern', 'Frequency', 'Average AHT (mins)', 'Average AST (mins)'])
 
 # Display the table beautifully on the console using tabulate
-print(tabulate(concern_counts_df, headers='keys', tablefmt='fancy_grid', showindex=False))
+print(tabulate(concern_data_df, headers='keys', tablefmt='fancy_grid', showindex=False))

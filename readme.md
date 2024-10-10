@@ -13,3 +13,5 @@ This project focuses on analyzing customer call data, extracting insights such a
 ## Test.csv
 It is present in the root dir
 
+## Extractions 
+All the key data that we have extracted from the raw data and transcripts is present in the Findings.csv in the root directory
